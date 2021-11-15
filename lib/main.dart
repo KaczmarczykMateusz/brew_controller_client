@@ -1,5 +1,8 @@
+import 'package:brew_controller_client/parameter_row_field.dart';
+import 'package:brew_controller_client/parameter_row_toggle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'parameter_row_value.dart';
 
 void main() {
   runApp(const MyApp());
@@ -89,15 +92,6 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  bool pumpOn = false;
-
-  void onSwitched(bool newState) {
-    newState = newState;
-    setState(() {
-      pumpOn = newState;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called, for instance as done
@@ -114,7 +108,7 @@ class _MyHomePageState extends State<MyHomePage> {
     double setPoint = 25.0;
     void _onSetPointModified(String setPointStr) {
       setPoint = double.parse(setPointStr);
-      return ;
+      //TODO: send to backend
     }
 
     TextField setPointField = TextField(
@@ -125,18 +119,12 @@ class _MyHomePageState extends State<MyHomePage> {
         FilteringTextInputFormatter.digitsOnly
       ], // Only numbers can be entered
     );
-
-    Switch toggleSwitch = Switch(
-      value: pumpOn,
-      onChanged: onSwitched,
-      activeTrackColor: Colors.lightGreenAccent,
-      activeColor: Colors.green,
-    );
-
-    Widget setPointSection = _buildParameterRow('Set point', 'System-wide temperature', tempIcon, _kettleTempStr, setPointField, null);
-    Widget kettleTempSection = _buildParameterRow('Kettle', 'Kettle temperature', tempIcon, _kettleTempStr, null, null);
-    Widget mashTempSection = _buildParameterRow('Mash', 'Bucket temperature', tempIcon, _mashTempStr, null, null);
-    Widget pumpOnOffSection = _buildParameterRow('Pump', 'Turn on/ off wort pump', tempIcon, "", null, toggleSwitch);
+    bool pumpOn = false;
+    final ValueSetter<bool> onSwitched = (newState) {
+      newState = newState;
+      pumpOn = newState;
+      //TODO: send to backend
+    };
 
     return Scaffold(
       appBar: AppBar(
@@ -146,10 +134,10 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column (
           children: [
-            setPointSection,
-            kettleTempSection,
-            mashTempSection,
-            pumpOnOffSection,
+            ParameterRowField("Set Point", 'System-wide temperature', tempIcon, _kettleTempStr, setPointField).build(context),
+            ParameterRowValue('Kettle', 'Kettle temperature', tempIcon, _kettleTempStr).build(context),
+            ParameterRowValue('Mash', 'Bucket temperature', tempIcon, _mashTempStr).build(context),
+            ParameterRowToggle('Pump', 'Turn on/ off wort pump', tempIcon, onSwitched).build(context),
           ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -159,45 +147,4 @@ class _MyHomePageState extends State<MyHomePage> {
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
-}
-
-Widget _buildParameterRow(String title, String description, Icon icon, final String text, TextField? textField, Switch? toggleSwitch) {
-  return Container(
-  padding: const EdgeInsets.all(32),
-  child: Row(
-    children: [
-      Expanded(
-        /*1*/
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /*2*/
-            Container(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            Text(
-              description,
-              style: TextStyle(
-                color: Colors.grey[500],
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      (null != textField) ? Row(
-      children:[
-        SizedBox(width: 20, height: 51, child : textField),
-        const Text(" °C"),
-      ]
-      ) : (null != toggleSwitch) ? toggleSwitch : Text(text+" °C"),
-    ],
-  ),
-);
 }
