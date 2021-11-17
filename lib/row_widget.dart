@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class RowWidget {
+abstract class RowWidget {
   final String _name;
 
   RowWidget(this._name);

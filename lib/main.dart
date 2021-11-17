@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:brew_controller_client/parameter_row_field.dart';
 import 'package:brew_controller_client/parameter_row_toggle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_server_client.dart';
 import 'parameter_row_value.dart';
 
 void main() {
@@ -51,19 +56,67 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-enum TemperatureSeleection {
+enum TemperatureSelection {
   none,
   kettle,
   mash
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _mashTemp = 25;
-  String _setPointTempStr = "76";
-  String _kettleTempStr = "25";
-  String _mashTempStr = "25";
+  final mqttClient = MqttServerClient('public.mqtthq.com', '');
+  static const mqttTopic = "brew_controller";
+  final StreamController<String> _statuses = StreamController<String>();
 
-  TemperatureSeleection selection = TemperatureSeleection.kettle;
+  TemperatureSelection selection = TemperatureSelection.kettle;
+
+  @override
+  void initState() {
+    super.initState();
+    connectMqtt();
+  }
+
+  Future<void> connectMqtt() async {
+    const String clientId = 'Mqtt_brew_client_1';
+    final client = mqttClient;
+    final connMess = MqttConnectMessage()
+        .withClientIdentifier(clientId)
+        .withWillTopic(
+        'brew_controller') // If you set this you must set a will message
+        .withWillMessage(clientId + ' unexpected exit')
+        .startClean() // Non persistent session for testing
+        .withWillQos(MqttQos.atLeastOnce);
+
+    client.connectionMessage = connMess;
+
+    await client.connect();
+
+    // 1. go to https://mqtthq.com/client
+    // 2. enter brew_controller
+    // 3. publish the following json
+    /*
+    {
+      "kettleTemp":13.0,
+      "mashTemp":16.0
+     }
+    */
+    const topic = mqttTopic;
+    client.subscribe(topic, MqttQos.atMostOnce);
+
+    client.updates!.listen((List<MqttReceivedMessage<MqttMessage?>>? c) {
+      final recMess = c![0].payload as MqttPublishMessage;
+      final pt =
+      MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+
+      /// The above may seem a little convoluted for users only interested in the
+      /// payload, some users however may be interested in the received publish message,
+      /// lets not constrain ourselves yet until the package has been in the wild
+      /// for a while.
+      /// The payload is a byte buffer, this will be specific to the topic
+      // print('EXAMPLE: payload is <-- $pt -->');
+      // print('');
+      _statuses.add(pt);
+    });
+  }
 
   void _createProfile() {
     setState(() {
@@ -111,40 +164,82 @@ class _MyHomePageState extends State<MyHomePage> {
       //TODO: send to backend
     }
 
-    TextField setPointField = TextField(
-      decoration: InputDecoration(hintText: _setPointTempStr),
-      keyboardType: TextInputType.number,
-      onSubmitted: _onSetPointModified,
-      inputFormatters: <TextInputFormatter>[
-        FilteringTextInputFormatter.digitsOnly
-      ], // Only numbers can be entered
-    );
     bool pumpOn = false;
-    final ValueSetter<bool> onSwitched = (newState) {
+    final ValueSetter<bool> onPumpSwitched = (newState) {
       newState = newState;
       pumpOn = newState;
       //TODO: send to backend
     };
 
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Column (
+    Widget buildMainPage(String setPointTemp, String kettleTempStr, String mashTempStr) {
+      TextField setPointField = TextField(
+        decoration: InputDecoration(hintText: setPointTemp),
+        keyboardType: TextInputType.number,
+        onSubmitted: _onSetPointModified,
+        inputFormatters: <TextInputFormatter>[
+          FilteringTextInputFormatter.digitsOnly
+        ], // Only numbers can be entered
+      );
+      return Scaffold(
+        appBar: AppBar(
+          // Here we take the value from the MyHomePage object that was created by
+          // the App.build method, and use it to set our appbar title.
+          title: Text(widget.title),
+        ),
+        body: Column(
           children: [
-            ParameterRowField("Set Point", 'System-wide temperature', tempIcon, _kettleTempStr, setPointField).build(context),
-            ParameterRowValue('Kettle', 'Kettle temperature', tempIcon, _kettleTempStr).build(context),
-            ParameterRowValue('Mash', 'Bucket temperature', tempIcon, _mashTempStr).build(context),
-            ParameterRowToggle('Pump', 'Turn on/ off wort pump', tempIcon, onSwitched).build(context),
+            ParameterRowField("Set Point", 'System-wide temperature', tempIcon,
+                setPointTemp, setPointField).build(context),
+            ParameterRowValue(
+                'Kettle', 'Kettle temperature', tempIcon, kettleTempStr).build(
+                context),
+            ParameterRowValue(
+                'Mash', 'Bucket temperature', tempIcon, mashTempStr).build(
+                context),
+            ParameterRowToggle(
+                'Pump', 'Turn on/ off wort pump', tempIcon, onPumpSwitched)
+                .build(context),
           ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createProfile,
-        tooltip: 'Create profile',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _createProfile,
+          tooltip: 'Create profile',
+          child: const Icon(Icons.add),
+        ), // This trailing comma makes auto-formatting nicer for build methods.
+      );
+    }
+    return StreamBuilder<String>(
+        stream: _statuses.stream,
+        builder: (context, snapshot) {
+
+          AcData acData = AcData(65.0, 10.0, 11.0, false);
+
+          if (snapshot.hasData) {
+            Map<String, dynamic> decoded = jsonDecode(snapshot.data!);
+            acData = AcData.fromJson(decoded);
+          }
+          return buildMainPage(
+              acData.setPointTemp.toString(), acData.kettleTemp.toString(), acData.mashTemp.toString());
+        });
   }
+}
+
+class AcData {
+  double setPointTemp = 65.0;
+  final double kettleTemp;
+  final double mashTemp;
+  bool pumpOn = false;
+
+  AcData(this.setPointTemp, this.kettleTemp, this.mashTemp, this.pumpOn);
+
+  AcData.fromJson(Map<String, dynamic> json)
+      : kettleTemp = json['kettleTemp'],
+        mashTemp = json['mashTemp'];
+
+  Map<String, dynamic> toJson() => {
+    'setPointTemp': setPointTemp,
+    'kettleTemp': kettleTemp,
+    'mashTemp': mashTemp,
+    'pumpOn': pumpOn,
+  };
 }

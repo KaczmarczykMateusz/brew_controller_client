@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 class ParameterRowToggleStateful extends StatefulWidget {
   final String name;
   final String description;
-  Icon icon;
-  ValueSetter<bool> onSwitched;
+  final Icon icon;
+  final ValueSetter<bool> onSwitched;
 
-  ParameterRowToggleStateful(this.name, this.description, this.icon, this.onSwitched, {Key? key }) : super(key: key);
+  const ParameterRowToggleStateful(this.name, this.description, this.icon, this.onSwitched, {Key? key }) : super(key: key);
 
   @override
   State<ParameterRowToggleStateful> createState() => _ParameterRowToggleStatefulState(name, description, icon, onSwitched);
@@ -41,6 +41,14 @@ class _ParameterRowToggleStatefulState extends State<ParameterRowToggleStateful>
 
     return RowWidget.buildParameterRow(
       name, description, icon, null, null, toggleSwitch);
+  }
+
+  @override
+  void didUpdateWidget(ParameterRowToggleStateful oldWidget) {
+    if(onSwitched != widget.onSwitched) {
+      //TODO: send proper set point to the host
+    }
+    super.didUpdateWidget(oldWidget);
   }
 }
 

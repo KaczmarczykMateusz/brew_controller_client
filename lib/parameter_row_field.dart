@@ -28,6 +28,14 @@ class _ParameterRowFieldStatefulState extends State<ParameterRowFieldStateful> {
     return RowWidget.buildParameterRow(
         name, description, icon, hintText, textField, null);
   }
+
+  @override
+  void didUpdateWidget(ParameterRowFieldStateful oldWidget) {
+    if(textField != widget.textField) {
+      //TODO: send proper set point to the host
+    }
+    super.didUpdateWidget(oldWidget);
+  }
 }
 
 class ParameterRowField extends RowWidget {
