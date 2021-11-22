@@ -1,12 +1,9 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:brew_controller_client/parameter_row_field.dart';
 import 'package:brew_controller_client/parameter_row_toggle.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
+import 'mqtt_client.dart';
 import 'parameter_row_value.dart';
 
 void main() {
@@ -63,60 +60,16 @@ enum TemperatureSelection {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final mqttClient = MqttServerClient('public.mqtthq.com', '');
-  static const mqttTopic = "brew_controller";
-  final StreamController<String> _statuses = StreamController<String>();
 
   TemperatureSelection selection = TemperatureSelection.kettle;
+  MqttController mqttController = MqttController('Mqtt_brew_client_1');
 
   @override
   void initState() {
     super.initState();
-    connectMqtt();
+    mqttController.connectMqtt();
   }
 
-  Future<void> connectMqtt() async {
-    const String clientId = 'Mqtt_brew_client_1';
-    final client = mqttClient;
-    final connMess = MqttConnectMessage()
-        .withClientIdentifier(clientId)
-        .withWillTopic(
-        'brew_controller') // If you set this you must set a will message
-        .withWillMessage(clientId + ' unexpected exit')
-        .startClean() // Non persistent session for testing
-        .withWillQos(MqttQos.atLeastOnce);
-
-    client.connectionMessage = connMess;
-
-    await client.connect();
-
-    // 1. go to https://mqtthq.com/client
-    // 2. enter brew_controller
-    // 3. publish the following json
-    /*
-    {
-      "kettleTemp":13.0,
-      "mashTemp":16.0
-     }
-    */
-    const topic = mqttTopic;
-    client.subscribe(topic, MqttQos.atMostOnce);
-
-    client.updates!.listen((List<MqttReceivedMessage<MqttMessage?>>? c) {
-      final recMess = c![0].payload as MqttPublishMessage;
-      final pt =
-      MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
-
-      /// The above may seem a little convoluted for users only interested in the
-      /// payload, some users however may be interested in the received publish message,
-      /// lets not constrain ourselves yet until the package has been in the wild
-      /// for a while.
-      /// The payload is a byte buffer, this will be specific to the topic
-      // print('EXAMPLE: payload is <-- $pt -->');
-      // print('');
-      _statuses.add(pt);
-    });
-  }
 
   void _createProfile() {
     setState(() {
@@ -130,7 +83,7 @@ class _MyHomePageState extends State<MyHomePage> {
           builder: (BuildContext context) {
             return AlertDialog(
               title: const Text('Create profile'),
-              content: const Text("In future this button will take you to profile creator."),
+              content: const Text("In future this button will take you to the profile creator."),
               actions: <Widget>[
                 TextButton(
                   onPressed: () {
@@ -145,41 +98,38 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  ClientData clientData = ClientData(65, 10.0, 11.0, false);
+  int setPoint = 62;
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _createProfile method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    Icon tempIcon = Icon(
-      Icons.star,
-      color: Colors.red[500],
-    );
+    Widget buildMainPage(String kettleTempStr, String mashTempStr) {
+      bool pumpOn = false;
 
-    double setPoint = 25.0;
-    void _onSetPointModified(String setPointStr) {
-      setPoint = double.parse(setPointStr);
-      //TODO: send to backend
-    }
-
-    bool pumpOn = false;
-    final ValueSetter<bool> onPumpSwitched = (newState) {
-      newState = newState;
-      pumpOn = newState;
-      //TODO: send to backend
-    };
-
-    Widget buildMainPage(String setPointTemp, String kettleTempStr, String mashTempStr) {
-      TextField setPointField = TextField(
-        decoration: InputDecoration(hintText: setPointTemp),
-        keyboardType: TextInputType.number,
-        onSubmitted: _onSetPointModified,
-        inputFormatters: <TextInputFormatter>[
-          FilteringTextInputFormatter.digitsOnly
-        ], // Only numbers can be entered
+      // This method is rerun every time setState is called, for instance as done
+      // by the _createProfile method above.
+      //
+      // The Flutter framework has been optimized to make rerunning build methods
+      // fast, so that you can just rebuild anything that needs updating rather
+      // than having to individually change instances of widgets.
+      Icon tempIcon = Icon(
+        Icons.star,
+        color: Colors.red[500],
       );
+
+      void _onSetPointChanged(String setPointStr) {
+        if("" == setPointStr) {
+          return ;
+        }
+        setPoint = int.parse(setPointStr);
+        mqttController.sendData(setPoint, pumpOn);
+      }
+
+      void _onPumpOnChanged(bool newState) {
+        newState = newState;
+        pumpOn = newState;
+        mqttController.sendData(setPoint, pumpOn);
+      }
+
       return Scaffold(
         appBar: AppBar(
           // Here we take the value from the MyHomePage object that was created by
@@ -189,7 +139,7 @@ class _MyHomePageState extends State<MyHomePage> {
         body: Column(
           children: [
             ParameterRowField("Set Point", 'System-wide temperature', tempIcon,
-                setPointTemp, setPointField).build(context),
+                setPoint.toString(), _onSetPointChanged).build(context),
             ParameterRowValue(
                 'Kettle', 'Kettle temperature', tempIcon, kettleTempStr).build(
                 context),
@@ -197,7 +147,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 'Mash', 'Bucket temperature', tempIcon, mashTempStr).build(
                 context),
             ParameterRowToggle(
-                'Pump', 'Turn on/ off wort pump', tempIcon, onPumpSwitched)
+                'Pump', 'Turn on/ off wort pump', tempIcon, _onPumpOnChanged)
                 .build(context),
           ],
         ),
@@ -209,30 +159,29 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     }
     return StreamBuilder<String>(
-        stream: _statuses.stream,
+        stream: mqttController.getStream().stream,
         builder: (context, snapshot) {
 
-          AcData acData = AcData(65.0, 10.0, 11.0, false);
 
           if (snapshot.hasData) {
             Map<String, dynamic> decoded = jsonDecode(snapshot.data!);
-            acData = AcData.fromJson(decoded);
+            clientData = ClientData.fromJson(decoded);
           }
           return buildMainPage(
-              acData.setPointTemp.toString(), acData.kettleTemp.toString(), acData.mashTemp.toString());
+              clientData.kettleTemp.toString(), clientData.mashTemp.toString());
         });
   }
 }
 
-class AcData {
-  double setPointTemp = 65.0;
+class ClientData {
+  int setPointTemp = 65;
   final double kettleTemp;
   final double mashTemp;
   bool pumpOn = false;
 
-  AcData(this.setPointTemp, this.kettleTemp, this.mashTemp, this.pumpOn);
+  ClientData(this.setPointTemp, this.kettleTemp, this.mashTemp, this.pumpOn);
 
-  AcData.fromJson(Map<String, dynamic> json)
+  ClientData.fromJson(Map<String, dynamic> json)
       : kettleTemp = json['kettleTemp'],
         mashTemp = json['mashTemp'];
 

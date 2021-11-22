@@ -15,3 +15,7 @@ For help getting started with Flutter, view our
 [online documentation](https://flutter.dev/docs), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
 
+## TODO:
+- export main page to separate file
+- implement dark mode
+- add connection status or error representing connection failure

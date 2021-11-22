@@ -44,7 +44,7 @@ abstract class RowWidget {
 
           (null != textField) ? Row(
               children:[
-                SizedBox(width: 20, height: 51, child : textField),
+                SizedBox(width: 23, height: 51, child : textField),
                 const Text(" °C"),
               ]
           ) : (null != toggleSwitch) ? toggleSwitch : Text("$text °C"),
